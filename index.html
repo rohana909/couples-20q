@@ -338,13 +338,42 @@ let peer, conn;
 let myName = '', partnerName = '', myRole = ''; // 'thinker' | 'guesser'
 let pickedCat = null;
 let game = { questionsLeft: 20, history: [], category: '', scores: {thinker:0, guesser:0} };
+let currentScreen = 's-home';
+let lastQuestion = ''; // track for thinker
+let wakeLock = null;
+let heartbeatInterval = null;
+let reconnectTimer = null;
+let isReconnecting = false;
+let myRoomCode = '';
+let pendingGuessText = '';
 
 // ── Utils ──────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 function show(id) {
+  currentScreen = id;
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   $(id).classList.add('active'); window.scrollTo(0,0);
 }
+
+// ── Wake Lock — keep screen on ─────────────────────────────
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch(e) {}
+}
+async function releaseWakeLock() {
+  if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+}
+// Re-acquire wake lock when page becomes visible again
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && myRole && !wakeLock) {
+    await requestWakeLock();
+    // Also try to reconnect if disconnected
+    if (conn && !conn.open && !isReconnecting) attemptReconnect();
+  }
+});
 function genCode() {
   const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
   return Array.from({length:4}, ()=>c[Math.floor(Math.random()*c.length)]).join('');
@@ -359,7 +388,82 @@ function hideErr(id) { $(id).style.display = 'none'; }
 
 // ── PeerJS ─────────────────────────────────────────────────
 function makePeer(id) {
-  return new Peer(id, { debug: 0 });
+  return new Peer(id, { debug: 0, config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ]
+  }});
+}
+
+// ── Heartbeat — detect & recover dead connections ──────────
+function startHeartbeat() {
+  clearInterval(heartbeatInterval);
+  heartbeatInterval = setInterval(() => {
+    if (!conn || !conn.open) {
+      if (!isReconnecting) attemptReconnect();
+      return;
+    }
+    try { send({ type: 'ping' }); } catch(e) {}
+  }, 5000);
+}
+
+function stopHeartbeat() {
+  clearInterval(heartbeatInterval);
+  heartbeatInterval = null;
+}
+
+function attemptReconnect() {
+  if (isReconnecting || !myRole || !myRoomCode) return;
+  isReconnecting = true;
+  showReconnectBanner(true);
+
+  // Destroy old peer, create new one with same ID
+  if (peer) { try { peer.destroy(); } catch(e) {} }
+
+  const peerId = myRole === 'thinker' ? '20q-' + myRoomCode : '20q-' + myRoomCode + '-g';
+  peer = makePeer(peerId);
+
+  peer.on('error', () => {
+    // Retry in 3s
+    reconnectTimer = setTimeout(() => { isReconnecting = false; attemptReconnect(); }, 3000);
+  });
+
+  peer.on('open', () => {
+    if (myRole === 'thinker') {
+      // Thinker waits for guesser to reconnect and ping
+      peer.on('connection', c => {
+        setupConn(c);
+        isReconnecting = false;
+        showReconnectBanner(false);
+      });
+    } else {
+      // Guesser reconnects to thinker
+      const c = peer.connect('20q-' + myRoomCode, { reliable: true });
+      c.on('open', () => {
+        setupConn(c);
+        isReconnecting = false;
+        showReconnectBanner(false);
+        // Send reconnect with full state so thinker can sync
+        send({ type: 'reconnect', name: myName, role: myRole, gameState: game, screen: currentScreen });
+      });
+      c.on('error', () => {
+        reconnectTimer = setTimeout(() => { isReconnecting = false; attemptReconnect(); }, 3000);
+      });
+    }
+  });
+}
+
+function showReconnectBanner(show) {
+  let banner = $('reconnect-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'reconnect-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;padding:10px;background:#e05a5a;color:white;text-align:center;font-weight:700;font-size:0.9rem;z-index:999;display:none';
+    banner.textContent = '📡 Reconnecting...';
+    document.body.appendChild(banner);
+  }
+  banner.style.display = show ? 'block' : 'none';
 }
 
 // ── Create Room ────────────────────────────────────────────
@@ -368,12 +472,14 @@ function createRoom() {
   hideErr('home-err');
   myRole = 'thinker';
   const code = genCode();
+  myRoomCode = code;
   peer = makePeer('20q-' + code);
   peer.on('error', e => showErr('home-err', 'Connection error: ' + e.message));
   peer.on('open', () => {
     $('lob-code').textContent = code;
     $('lob-me').textContent   = myName + ' · Thinker 🤔';
     show('s-lobby');
+    requestWakeLock();
     peer.on('connection', c => setupConn(c));
   });
 }
@@ -386,11 +492,13 @@ function joinRoom() {
   const code = $('inp-code').value.trim().toUpperCase();
   if (code.length !== 4) { showErr('join-err', 'Enter a 4-letter code!'); return; }
   myRole = 'guesser';
+  myRoomCode = code;
   peer = makePeer('20q-' + code + '-g');
   peer.on('error', e => showErr('join-err', 'Could not connect — check the code and try again.'));
   peer.on('open', () => {
     const c = peer.connect('20q-' + code, { reliable: true });
     c.on('error', e => showErr('join-err', 'Connection error.'));
+    requestWakeLock();
     setupConn(c);
   });
 }
@@ -400,13 +508,39 @@ function setupConn(c) {
   conn = c;
   c.on('open', () => {
     send({ type: 'hello', name: myName, role: myRole });
+    startHeartbeat();
   });
-  c.on('data', handleMsg);
+  c.on('data', msg => {
+    if (msg.type === 'question') lastQuestion = msg.question;
+    if (msg.type === 'ping') { send({ type: 'pong' }); return; }
+    if (msg.type === 'pong') return;
+    if (msg.type === 'reconnect') {
+      // Partner reconnected — send them current state
+      partnerName = msg.name;
+      send({ type: 'state-sync', gameState: game, screen: currentScreen, partnerName: myName });
+      return;
+    }
+    if (msg.type === 'state-sync') {
+      // Restore our state from partner
+      game = msg.gameState;
+      partnerName = msg.partnerName;
+      updateAllProgress();
+      show(currentScreen); // stay on same screen
+      return;
+    }
+    handleMsg(msg);
+  });
   c.on('close', () => {
-    alert('Your partner disconnected.');
-    leaveRoom();
+    stopHeartbeat();
+    if (!isReconnecting) {
+      showReconnectBanner(true);
+      reconnectTimer = setTimeout(() => attemptReconnect(), 1500);
+    }
   });
-  c.on('error', e => console.error(e));
+  c.on('error', e => {
+    stopHeartbeat();
+    if (!isReconnecting) attemptReconnect();
+  });
 }
 
 function send(msg) {
@@ -533,12 +667,11 @@ function thinkerReady() {
 }
 
 // ── Thinker: answer ────────────────────────────────────────
-let _lastQ = '';
 function sendAnswer(ans) {
   game.questionsLeft--;
-  game.history.push({ q: _lastQ, a: ans });
+  game.history.push({ q: lastQuestion, a: ans });
   updateAllProgress();
-  send({ type: 'answer', answer: ans, question: _lastQ, questionsLeft: game.questionsLeft });
+  send({ type: 'answer', answer: ans, question: lastQuestion, questionsLeft: game.questionsLeft });
   if (game.questionsLeft <= 0) {
     show('s-twait-guess');
   } else {
@@ -657,43 +790,23 @@ function buildHistoryUI(histId, cardId) {
   }).join('');
 }
 
-// Patch handleMsg to capture question text for thinker
-const _baseHandle = handleMsg;
-// Override the 'question' branch to also save _lastQ
-const _patchedHandle = function(msg) {
-  if (msg.type === 'question') _lastQ = msg.question;
-  _baseHandle(msg);
-};
-// Replace on conn setup (patch conn.on('data'))
-const _origSetupConn = setupConn;
-// (already correct — conn.on('data', handleMsg) uses the outer handleMsg
-//  which captures _lastQ via the 'question' case... wait, it doesn't.
-//  Fix: add _lastQ save directly in the question case.)
+// lastQuestion is saved directly in setupConn's data handler
 
 // ── Leave ──────────────────────────────────────────────────
 function leaveRoom() {
-  if (conn) { conn.close(); conn = null; }
-  if (peer) { peer.destroy(); peer = null; }
-  myRole = ''; partnerName = ''; pickedCat = null;
+  stopHeartbeat();
+  clearTimeout(reconnectTimer);
+  releaseWakeLock();
+  if (conn) { try { conn.close(); } catch(e){} conn = null; }
+  if (peer) { try { peer.destroy(); } catch(e){} peer = null; }
+  myRole = ''; partnerName = ''; pickedCat = null; myRoomCode = '';
+  isReconnecting = false; lastQuestion = ''; pendingGuessText = '';
   game = { questionsLeft:20, history:[], category:'', scores:{thinker:0,guesser:0} };
+  showReconnectBanner(false);
   show('s-home');
 }
 </script>
 
-<!-- Fix: save _lastQ in the question handler -->
-<script>
-// Monkey-patch: intercept data on conn after question is received
-const _origSetup = setupConn;
-window.setupConn = function(c) {
-  conn = c;
-  c.on('open', () => send({ type:'hello', name:myName, role:myRole }));
-  c.on('data', function(msg) {
-    if (msg.type === 'question') _lastQ = msg.question;
-    handleMsg(msg);
-  });
-  c.on('close', () => { alert('Your partner disconnected.'); leaveRoom(); });
-  c.on('error', e => console.error(e));
-};
-</script>
+
 </body>
 </html>
