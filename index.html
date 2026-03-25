@@ -138,7 +138,16 @@
   <div class="card" style="text-align:center;padding:26px 20px">
     <span class="emoji-big">🤔</span>
     <h2>Think of something!</h2>
-    <p>Keep it in your head. Pick a category so your partner knows what they're guessing.</p>
+    <p>Type it below — it's hidden from everyone. Pick a category so your partner knows what they're guessing.</p>
+  </div>
+  <div class="card">
+    <h2>Your secret answer</h2>
+    <div style="position:relative">
+      <input type="password" id="inp-secret" placeholder="Type it here (hidden 🔒)" maxlength="60"
+        style="padding-right:48px">
+      <button onclick="toggleSecret()" id="btn-eye"
+        style="position:absolute;right:10px;top:50%;transform:translateY(-60%);width:auto;padding:6px 10px;background:transparent;border:none;font-size:1.2rem;color:var(--muted);cursor:pointer">👁️</button>
+    </div>
   </div>
   <div class="card">
     <h2>Category</h2>
@@ -290,8 +299,12 @@
     <p style="color:var(--muted);font-size:0.82rem;margin-bottom:6px">Their guess:</p>
     <p id="conf-guess" style="font-size:1.4rem;font-weight:800;color:var(--accent2)"></p>
   </div>
+  <div class="card" style="text-align:center;background:rgba(201,168,76,0.07);border-color:rgba(201,168,76,0.4)">
+    <p style="color:var(--muted);font-size:0.78rem;margin-bottom:4px">🔒 Your secret answer (only you can see this)</p>
+    <p id="conf-secret" style="font-size:1.1rem;font-weight:800;color:var(--accent2)"></p>
+  </div>
   <div class="card">
-    <p style="text-align:center;margin-bottom:14px">Is that right?</p>
+    <p style="text-align:center;margin-bottom:14px">Does their guess match your answer?</p>
     <div style="display:flex;flex-direction:column;gap:10px">
       <button class="btn-yes" onclick="sendConfirm(true)">✅ Yes, correct!</button>
       <button class="btn-no"  onclick="sendConfirm(false)">❌ Nope, wrong!</button>
@@ -320,6 +333,10 @@
     <p id="res-sub"    style="margin-top:8px;font-size:1.1rem;color:var(--accent2);font-weight:700"></p>
     <p id="res-detail" style="margin-top:6px"></p>
   </div>
+  <div class="card" style="text-align:center" id="res-secret-card">
+    <p style="color:var(--muted);font-size:0.8rem;margin-bottom:6px">🔓 The answer was</p>
+    <p id="res-secret" style="font-size:1.5rem;font-weight:900;color:var(--accent2)"></p>
+  </div>
   <div class="card">
     <h2 style="text-align:center;margin-bottom:12px">Score</h2>
     <div class="score-row">
@@ -337,7 +354,7 @@
 let peer, conn;
 let myName = '', partnerName = '', myRole = ''; // 'thinker' | 'guesser'
 let pickedCat = null;
-let game = { questionsLeft: 20, history: [], category: '', scores: {thinker:0, guesser:0} };
+let game = { questionsLeft: 20, history: [], category: '', scores: {thinker:0, guesser:0}, secretAnswer: '' };
 let currentScreen = 's-home';
 let lastQuestion = ''; // track for thinker
 let wakeLock = null;
@@ -610,6 +627,7 @@ function handleMsg(msg) {
       // Thinker receives guess
       $('conf-lbl').textContent = partnerName + ' guessed:';
       $('conf-guess').textContent = msg.guess;
+      $('conf-secret').textContent = game.secretAnswer || '(your answer)';
       show('s-confirm');
       break;
 
@@ -629,7 +647,7 @@ function handleMsg(msg) {
       break;
 
     case 'play-again':
-      game = { questionsLeft: 20, history: [], category: '', scores: msg.scores };
+      game = { questionsLeft: 20, history: [], category: '', scores: msg.scores, secretAnswer: '' };
       if (msg.switchRoles) myRole = myRole === 'thinker' ? 'guesser' : 'thinker';
       pickedCat = null;
       if (myRole === 'thinker') {
@@ -644,22 +662,40 @@ function handleMsg(msg) {
 }
 
 // ── Thinker: pick category & ready ────────────────────────
+function toggleSecret() {
+  const inp = $('inp-secret');
+  const isHidden = inp.type === 'password';
+  inp.type = isHidden ? 'text' : 'password';
+  $('btn-eye').textContent = isHidden ? '🙈' : '👁️';
+}
+
 function pickCat(cat) {
   pickedCat = cat;
   ['Person','Place','Thing'].forEach(c => {
     $('cat-'+c).className = c === cat ? 'btn-primary' : 'btn-ghost';
   });
-  $('btn-ready').disabled = false;
+  checkReady();
 }
+
+function checkReady() {
+  const secret = $('inp-secret').value.trim();
+  $('btn-ready').disabled = !(pickedCat && secret.length > 0);
+}
+
 function resetCats() {
   ['Person','Place','Thing'].forEach(c => { $('cat-'+c).className = 'btn-ghost'; });
+  if ($('inp-secret')) { $('inp-secret').value = ''; $('inp-secret').type = 'password'; }
+  if ($('btn-eye')) $('btn-eye').textContent = '👁️';
 }
 
 function thinkerReady() {
   if (!pickedCat) return;
+  const secret = $('inp-secret').value.trim();
+  if (!secret) { $('inp-secret').focus(); return; }
   game.category = pickedCat;
   game.questionsLeft = 20;
   game.history = [];
+  game.secretAnswer = secret;
   updateAllProgress();
   send({ type: 'start', category: pickedCat });
   $('tw-gname').textContent = partnerName;
@@ -725,6 +761,7 @@ function sendConfirm(correct) {
     guesserName: myRole==='guesser' ? myName : partnerName,
     questionsUsed: 20 - game.questionsLeft,
     guess: $('conf-guess').textContent,
+    secretAnswer: game.secretAnswer,
     scores
   };
   send(result); handleMsg(result);
@@ -741,13 +778,20 @@ function renderResult(msg) {
   if (msg.correct) {
     $('res-emoji').textContent = '🎉';
     $('res-title').textContent = msg.guesserName + ' got it!';
-    $('res-sub').textContent   = msg.guess;
+    $('res-sub').textContent   = `"${msg.guess}"`;
     $('res-detail').textContent = `Guessed in ${msg.questionsUsed} question${msg.questionsUsed!==1?'s':''}`;
   } else {
     $('res-emoji').textContent = '😅';
     $('res-title').textContent = msg.thinkerName + ' wins this round!';
     $('res-sub').textContent   = `"${msg.guess}" — not quite!`;
     $('res-detail').textContent = msg.guesserName + " couldn't crack it";
+  }
+  // Reveal the secret answer
+  if (msg.secretAnswer) {
+    $('res-secret').textContent = msg.secretAnswer;
+    $('res-secret-card').style.display = 'block';
+  } else {
+    $('res-secret-card').style.display = 'none';
   }
   const s = msg.scores;
   $('sc1n').textContent = msg.thinkerName + ' 🤔';
@@ -791,6 +835,17 @@ function buildHistoryUI(histId, cardId) {
 }
 
 // lastQuestion is saved directly in setupConn's data handler
+
+// Enable ready button as thinker types their secret
+document.addEventListener('DOMContentLoaded', () => {
+  const inp = $('inp-secret');
+  if (inp) inp.addEventListener('input', checkReady);
+});
+// Also wire it immediately in case DOMContentLoaded already fired
+(function() {
+  const inp = $('inp-secret');
+  if (inp) inp.addEventListener('input', checkReady);
+})();
 
 // ── Leave ──────────────────────────────────────────────────
 function leaveRoom() {
