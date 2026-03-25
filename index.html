@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Couples 20 Questions</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #1a0a2e;
+    --card: #2d1b4e;
+    --accent: #c9a84c;
+    --accent2: #e8c97a;
+    --text: #f0e6ff;
+    --muted: #9b86c0;
+    --yes: #4caf82;
+    --no: #e05a5a;
+    --maybe: #c9a84c;
+    --radius: 16px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+
+  .screen { display: none; width: 100%; max-width: 480px; animation: fadeIn 0.3s ease; }
+  .screen.active { display: flex; flex-direction: column; gap: 16px; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 24px;
+    border: 1px solid rgba(201,168,76,0.2);
+  }
+
+  h1 { font-size: 2rem; font-weight: 800; color: var(--accent2); text-align: center; line-height: 1.2; }
+  h2 { font-size: 1.3rem; font-weight: 700; color: var(--accent2); margin-bottom: 8px; }
+  p { color: var(--muted); line-height: 1.6; font-size: 0.95rem; }
+
+  .emoji-big { font-size: 3.5rem; text-align: center; display: block; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+
+  button {
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    letter-spacing: 0.3px;
+  }
+  button:active { transform: scale(0.97); }
+
+  .btn-primary { background: var(--accent); color: #1a0a2e; }
+  .btn-primary:hover { background: var(--accent2); }
+
+  .btn-yes { background: var(--yes); color: white; }
+  .btn-no { background: var(--no); color: white; }
+  .btn-maybe { background: var(--maybe); color: #1a0a2e; }
+  .btn-ghost { background: transparent; border: 2px solid var(--muted); color: var(--muted); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-danger { background: var(--no); color: white; }
+  .btn-success { background: var(--yes); color: white; }
+
+  .answer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .answer-grid .btn-maybe { grid-column: 1 / -1; }
+
+  input[type="text"] {
+    width: 100%;
+    padding: 14px 16px;
+    background: rgba(255,255,255,0.08);
+    border: 2px solid rgba(201,168,76,0.3);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type="text"]:focus { border-color: var(--accent); }
+  input[type="text"]::placeholder { color: var(--muted); }
+
+  .progress-bar {
+    height: 8px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 99px;
+    transition: width 0.4s ease;
+  }
+
+  .q-counter {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .q-number { font-size: 1.5rem; font-weight: 800; color: var(--accent2); }
+  .q-label { font-size: 0.8rem; color: var(--muted); text-align: right; }
+
+  .history {
+    max-height: 220px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-right: 4px;
+  }
+  .history::-webkit-scrollbar { width: 4px; }
+  .history::-webkit-scrollbar-track { background: transparent; }
+  .history::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 99px; }
+
+  .history-item {
+    background: rgba(255,255,255,0.05);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 0.85rem;
+  }
+  .history-q { color: var(--muted); margin-bottom: 3px; }
+  .history-a { font-weight: 700; }
+  .history-a.yes { color: var(--yes); }
+  .history-a.no { color: var(--no); }
+  .history-a.maybe { color: var(--maybe); }
+
+  .score-row {
+    display: flex;
+    gap: 12px;
+  }
+  .score-card {
+    flex: 1;
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    padding: 12px;
+    text-align: center;
+  }
+  .score-card .name { font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; }
+  .score-card .score { font-size: 1.8rem; font-weight: 800; color: var(--accent2); }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-label { font-size: 0.9rem; color: var(--text); }
+  .toggle-sub { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+  .switch {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.15);
+    border-radius: 99px;
+    cursor: pointer;
+    transition: 0.3s;
+  }
+  .slider:before {
+    content: '';
+    position: absolute;
+    height: 18px; width: 18px;
+    left: 3px; top: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: 0.3s;
+  }
+  input:checked + .slider { background: var(--accent); }
+  input:checked + .slider:before { transform: translateX(20px); }
+
+  .hint-btn {
+    background: rgba(201,168,76,0.15);
+    color: var(--accent);
+    border: 1px solid rgba(201,168,76,0.3);
+    padding: 10px;
+    font-size: 0.85rem;
+    border-radius: 10px;
+  }
+
+  .timer-display {
+    font-size: 2rem;
+    font-weight: 800;
+    text-align: center;
+    color: var(--accent2);
+  }
+  .timer-display.urgent { color: var(--no); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  .celebration {
+    text-align: center;
+    animation: celebrate 0.5s ease;
+  }
+  @keyframes celebrate { 0% { transform: scale(0.8); } 70% { transform: scale(1.05); } 100% { transform: scale(1); } }
+
+  .name-inputs { display: flex; flex-direction: column; gap: 10px; }
+  .input-label { font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; }
+
+  .divider { height: 1px; background: rgba(255,255,255,0.08); }
+
+  .category-badge {
+    display: inline-block;
+    padding: 6px 14px;
+    background: rgba(201,168,76,0.2);
+    border: 1px solid var(--accent);
+    border-radius: 99px;
+    color: var(--accent2);
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 8px auto;
+    display: block;
+    text-align: center;
+    width: fit-content;
+    margin: 8px auto;
+  }
+
+  .pass-phone {
+    text-align: center;
+    padding: 20px;
+    background: rgba(201,168,76,0.08);
+    border: 2px dashed rgba(201,168,76,0.4);
+    border-radius: var(--radius);
+    color: var(--accent);
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<!-- HOME -->
+<div class="screen active" id="screen-home">
+  <div class="card" style="text-align:center; padding: 40px 24px;">
+    <span class="emoji-big">💑</span>
+    <h1>20 Questions</h1>
+    <p class="subtitle" style="margin-top:8px;">The couples edition</p>
+  </div>
+
+  <div class="card">
+    <h2>Player Names</h2>
+    <p style="margin-bottom:16px;">So we know who's winning 😏</p>
+    <div class="name-inputs">
+      <div>
+        <div class="input-label">Player 1</div>
+        <input type="text" id="name1" placeholder="Your name" maxlength="20">
+      </div>
+      <div>
+        <div class="input-label">Player 2</div>
+        <input type="text" id="name2" placeholder="Their name" maxlength="20">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Options</h2>
+    <div class="toggle-row">
+      <div>
+        <div class="toggle-label">⏱️ Timer per question</div>
+        <div class="toggle-sub">30 seconds to answer</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="toggle-timer"><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <div>
+        <div class="toggle-label">💡 Allow hints</div>
+        <div class="toggle-sub">Uses 2 questions</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="toggle-hints" checked><span class="slider"></span></label>
+    </div>
+  </div>
+
+  <button class="btn-primary" onclick="startGame()">Let's Play 🎮</button>
+</div>
+
+<!-- THINK OF SOMETHING (Player 1) -->
+<div class="screen" id="screen-think">
+  <div class="card" style="text-align:center; padding: 32px 24px;">
+    <span class="emoji-big">🤔</span>
+    <h2 id="thinker-name">Player 1's Turn</h2>
+    <p style="margin-top: 8px;">Think of a <strong style="color:var(--accent2)">person, place, or thing</strong>. Keep it in your head — don't say it out loud!</p>
+  </div>
+
+  <div class="card">
+    <h2>Pick a category</h2>
+    <p style="margin-bottom: 16px;">This helps <span id="guesser-name-hint">Player 2</span> know what they're guessing.</p>
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;">
+      <button class="btn-ghost" onclick="setCategory('Person')" id="cat-Person">👤 Person</button>
+      <button class="btn-ghost" onclick="setCategory('Place')" id="cat-Place">🌍 Place</button>
+      <button class="btn-ghost" onclick="setCategory('Thing')" id="cat-Thing">📦 Thing</button>
+    </div>
+  </div>
+
+  <div class="pass-phone" id="pass-prompt">
+    📱 Pass the phone to <span id="guesser-name-pass">Player 2</span>!
+  </div>
+
+  <button class="btn-primary" onclick="goToGame()" id="ready-btn" disabled>
+    <span id="guesser-name-pass2">Player 2</span> is ready — Start! 🚀
+  </button>
+</div>
+
+<!-- GAME SCREEN (Player 2) -->
+<div class="screen" id="screen-game">
+  <div class="card">
+    <div class="q-counter">
+      <div>
+        <div class="q-number"><span id="q-remaining">20</span> left</div>
+        <div style="font-size:0.75rem; color:var(--muted);">questions remaining</div>
+      </div>
+      <div class="q-label">
+        <div id="timer-display" class="timer-display" style="display:none;">30</div>
+        <div id="category-show" class="category-badge" style="display:none;"></div>
+      </div>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress-fill" style="width:100%"></div>
+    </div>
+  </div>
+
+  <div class="card" id="history-card" style="display:none;">
+    <h2>History</h2>
+    <div class="history" id="history-list"></div>
+  </div>
+
+  <div class="card">
+    <h2 id="guesser-label">Your question:</h2>
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <input type="text" id="question-input" placeholder="Ask a yes/no question..." maxlength="120">
+      <div class="answer-grid">
+        <button class="btn-yes" onclick="answer('Yes ✅')">Yes ✅</button>
+        <button class="btn-no" onclick="answer('No ❌')">No ❌</button>
+        <button class="btn-maybe" onclick="answer('Maybe 🤔')">Maybe / Sometimes 🤔</button>
+      </div>
+      <button class="hint-btn" id="hint-btn" onclick="useHint()">💡 Hint (costs 2 questions)</button>
+    </div>
+  </div>
+
+  <button class="btn-success" onclick="goToGuess()">🎯 I know it — make a guess!</button>
+</div>
+
+<!-- GUESS SCREEN -->
+<div class="screen" id="screen-guess">
+  <div class="card" style="text-align:center; padding: 32px 24px;">
+    <span class="emoji-big">🎯</span>
+    <h2>Make your guess!</h2>
+    <p>What do you think it is?</p>
+  </div>
+  <div class="card">
+    <input type="text" id="guess-input" placeholder="Type your guess..." maxlength="80">
+    <div style="margin-top:12px; display:flex; flex-direction:column; gap:10px;">
+      <button class="btn-primary" onclick="submitGuess()">Submit Guess 🚀</button>
+      <button class="btn-ghost" onclick="goBackToGame()">← Keep asking questions</button>
+    </div>
+  </div>
+</div>
+
+<!-- REVEAL (Player 1 confirms) -->
+<div class="screen" id="screen-reveal">
+  <div class="card" style="text-align:center; padding:32px 24px;">
+    <span class="emoji-big">🙈</span>
+    <h2 id="reveal-title">Did they get it?</h2>
+    <p id="reveal-guess-text" style="margin-top:8px; font-size:1.1rem; color:var(--accent2); font-weight:700;"></p>
+    <p style="margin-top:8px;" id="reveal-sub"></p>
+  </div>
+  <div class="pass-phone">📱 Pass back to <span id="reveal-p1-name">Player 1</span> to confirm!
+  </div>
+  <div class="card">
+    <p style="margin-bottom:16px; text-align:center;">Was their guess correct?</p>
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <button class="btn-yes" onclick="endGame(true)">✅ Yes, correct!</button>
+      <button class="btn-no" onclick="endGame(false)">❌ Nope, wrong!</button>
+    </div>
+  </div>
+</div>
+
+<!-- TIME'S UP -->
+<div class="screen" id="screen-timeout">
+  <div class="card" style="text-align:center; padding:32px 24px;">
+    <span class="emoji-big">🔔</span>
+    <h2>20 Questions Used!</h2>
+    <p>Out of questions — time to guess or give up!</p>
+  </div>
+  <div class="card">
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <button class="btn-primary" onclick="goToGuess()">🎯 Make a final guess!</button>
+      <button class="btn-ghost" onclick="giveUp()">🏳️ Give up — show me the answer</button>
+    </div>
+  </div>
+</div>
+
+<!-- WIN SCREEN -->
+<div class="screen" id="screen-win">
+  <div class="card celebration">
+    <span class="emoji-big">🎉</span>
+    <h2 id="win-title" style="text-align:center;">They got it!</h2>
+    <p id="win-answer" style="text-align:center; font-size:1.2rem; color:var(--accent2); font-weight:700; margin-top:8px;"></p>
+    <p id="win-questions" style="text-align:center; margin-top:4px;"></p>
+  </div>
+  <div class="card">
+    <h2 style="text-align:center; margin-bottom:12px;">Score</h2>
+    <div class="score-row">
+      <div class="score-card">
+        <div class="name" id="score-name1">P1</div>
+        <div class="score" id="score-val1">0</div>
+      </div>
+      <div class="score-card">
+        <div class="name" id="score-name2">P2</div>
+        <div class="score" id="score-val2">0</div>
+      </div>
+    </div>
+  </div>
+  <button class="btn-primary" onclick="playAgain(false)">🔄 Play again (same roles)</button>
+  <button class="btn-ghost" onclick="playAgain(true)">🔀 Switch roles</button>
+</div>
+
+<!-- LOSE SCREEN -->
+<div class="screen" id="screen-lose">
+  <div class="card" style="text-align:center; padding:32px 24px;">
+    <span class="emoji-big">😅</span>
+    <h2 id="lose-title">So close!</h2>
+    <p id="lose-sub"></p>
+    <p id="lose-answer" style="font-size:1.3rem; color:var(--accent2); font-weight:700; margin-top:12px;"></p>
+  </div>
+  <div class="card">
+    <h2 style="text-align:center; margin-bottom:12px;">Score</h2>
+    <div class="score-row">
+      <div class="score-card">
+        <div class="name" id="score-name1b">P1</div>
+        <div class="score" id="score-val1b">0</div>
+      </div>
+      <div class="score-card">
+        <div class="name" id="score-name2b">P2</div>
+        <div class="score" id="score-val2b">0</div>
+      </div>
+    </div>
+  </div>
+  <button class="btn-primary" onclick="playAgain(false)">🔄 Try again</button>
+  <button class="btn-ghost" onclick="playAgain(true)">🔀 Switch roles</button>
+</div>
+
+<script>
+let state = {
+  p1: 'Player 1', p2: 'Player 2',
+  thinker: 1,         // which player is thinking
+  category: null,
+  secretAnswer: '',
+  questionsLeft: 20,
+  questionsUsed: 0,
+  history: [],
+  scores: [0, 0],
+  timerEnabled: false,
+  hintsEnabled: true,
+  hintUsed: false,
+  timerInterval: null,
+  timerSeconds: 30,
+};
+
+function $(id) { return document.getElementById(id); }
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+function thinkerName() { return state.thinker === 1 ? state.p1 : state.p2; }
+function guesserName() { return state.thinker === 1 ? state.p2 : state.p1; }
+
+function startGame() {
+  state.p1 = $('name1').value.trim() || 'Player 1';
+  state.p2 = $('name2').value.trim() || 'Player 2';
+  state.timerEnabled = $('toggle-timer').checked;
+  state.hintsEnabled = $('toggle-hints').checked;
+  state.category = null;
+  state.history = [];
+  state.questionsLeft = 20;
+  state.questionsUsed = 0;
+  state.hintUsed = false;
+  state.secretAnswer = '';
+
+  $('thinker-name').textContent = `${thinkerName()}'s turn to think`;
+  $('guesser-name-hint').textContent = guesserName();
+  $('guesser-name-pass').textContent = guesserName();
+  $('guesser-name-pass2').textContent = guesserName();
+  $('ready-btn').disabled = true;
+  $('ready-btn').textContent = `${guesserName()} is ready — Start! 🚀`;
+
+  // Reset category buttons
+  ['Person','Place','Thing'].forEach(c => {
+    $(` cat-${c}`);
+    let btn = $(`cat-${c}`);
+    if (btn) { btn.classList.remove('btn-primary'); btn.classList.add('btn-ghost'); }
+  });
+
+  showScreen('screen-think');
+}
+
+function setCategory(cat) {
+  state.category = cat;
+  ['Person','Place','Thing'].forEach(c => {
+    let btn = $(`cat-${c}`);
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-ghost');
+  });
+  $(`cat-${cat}`).classList.remove('btn-ghost');
+  $(`cat-${cat}`).classList.add('btn-primary');
+  $('ready-btn').disabled = false;
+}
+
+function goToGame() {
+  if (!state.category) { alert('Please pick a category first!'); return; }
+
+  $('guesser-label').textContent = `${guesserName()}, ask away:`;
+  $('hint-btn').style.display = state.hintsEnabled ? 'block' : 'none';
+  $('history-card').style.display = 'none';
+  $('history-list').innerHTML = '';
+  $('question-input').value = '';
+
+  updateProgress();
+
+  if (state.category) {
+    $('category-show').textContent = `Category: ${state.category}`;
+    $('category-show').style.display = 'block';
+  }
+
+  showScreen('screen-game');
+  startTimer();
+}
+
+function updateProgress() {
+  $('q-remaining').textContent = state.questionsLeft;
+  const pct = (state.questionsLeft / 20) * 100;
+  $('progress-fill').style.width = pct + '%';
+  $('progress-fill').style.background = pct > 50
+    ? 'linear-gradient(90deg, #c9a84c, #e8c97a)'
+    : pct > 25
+    ? 'linear-gradient(90deg, #e09a4c, #e8c97a)'
+    : 'linear-gradient(90deg, #e05a5a, #e88a7a)';
+}
+
+function startTimer() {
+  clearInterval(state.timerInterval);
+  if (!state.timerEnabled) { $('timer-display').style.display = 'none'; return; }
+  state.timerSeconds = 30;
+  $('timer-display').style.display = 'block';
+  $('timer-display').textContent = state.timerSeconds;
+  $('timer-display').classList.remove('urgent');
+  state.timerInterval = setInterval(() => {
+    state.timerSeconds--;
+    $('timer-display').textContent = state.timerSeconds;
+    if (state.timerSeconds <= 10) $('timer-display').classList.add('urgent');
+    if (state.timerSeconds <= 0) {
+      clearInterval(state.timerInterval);
+      // Force no answer if timer expires
+      let q = $('question-input').value.trim() || '(no question asked)';
+      recordAnswer(q, 'Skipped ⏭️');
+    }
+  }, 1000);
+}
+
+function answer(ans) {
+  const q = $('question-input').value.trim();
+  if (!q) { $('question-input').focus(); $('question-input').placeholder = 'Ask a question first!'; return; }
+  clearInterval(state.timerInterval);
+  recordAnswer(q, ans);
+}
+
+function recordAnswer(q, ans) {
+  state.history.push({ q, a: ans });
+  state.questionsLeft--;
+  state.questionsUsed++;
+  $('question-input').value = '';
+  $('question-input').placeholder = 'Ask a yes/no question...';
+
+  // Update history UI
+  $('history-card').style.display = 'block';
+  const item = document.createElement('div');
+  item.className = 'history-item';
+  const aClass = ans.startsWith('Yes') ? 'yes' : ans.startsWith('No') ? 'no' : 'maybe';
+  item.innerHTML = `<div class="history-q">Q${state.questionsUsed}: ${q}</div><div class="history-a ${aClass}">${ans}</div>`;
+  $('history-list').prepend(item);
+
+  updateProgress();
+
+  if (state.questionsLeft <= 0) {
+    clearInterval(state.timerInterval);
+    showScreen('screen-timeout');
+  } else {
+    startTimer();
+  }
+}
+
+function useHint() {
+  if (state.hintUsed) { alert('You already used your hint!'); return; }
+  if (state.questionsLeft <= 2) { alert("Not enough questions left for a hint!"); return; }
+  state.hintUsed = true;
+  state.questionsLeft -= 2;
+  state.questionsUsed += 2;
+  updateProgress();
+
+  const hints = {
+    'Person': ['They exist in real life or fiction', 'Think about famous or familiar faces'],
+    'Place': ['You could visit it (or wish you could)', 'It exists on a map somewhere'],
+    'Thing': ['It\'s an object, concept, or creation', 'You might be able to hold it or use it'],
+  };
+  const catHints = hints[state.category] || ['It exists in some form'];
+  const hint = catHints[Math.floor(Math.random() * catHints.length)];
+  alert(`💡 Hint (cost: 2 questions)\n\nCategory: ${state.category}\n"${hint}"`);
+  $('hint-btn').textContent = '💡 Hint used';
+  $('hint-btn').disabled = true;
+  $('hint-btn').style.opacity = '0.5';
+}
+
+function goToGuess() {
+  clearInterval(state.timerInterval);
+  $('guess-input').value = '';
+  showScreen('screen-guess');
+}
+
+function goBackToGame() {
+  showScreen('screen-game');
+  startTimer();
+}
+
+function submitGuess() {
+  const guess = $('guess-input').value.trim();
+  if (!guess) { $('guess-input').focus(); return; }
+  state.pendingGuess = guess;
+
+  $('reveal-title').textContent = `${guesserName()} guessed:`;
+  $('reveal-guess-text').textContent = `"${guess}"`;
+  $('reveal-sub').textContent = `Pass to ${thinkerName()} to confirm!`;
+  $('reveal-p1-name').textContent = thinkerName();
+  showScreen('screen-reveal');
+}
+
+function giveUp() {
+  // Show answer reveal prompt for thinker
+  state.pendingGuess = null;
+  $('reveal-title').textContent = `Time's up! What was it?`;
+  $('reveal-guess-text').textContent = '';
+  $('reveal-sub').textContent = `Pass to ${thinkerName()} to reveal the answer.`;
+  $('reveal-p1-name').textContent = thinkerName();
+  showScreen('screen-reveal');
+}
+
+function endGame(correct) {
+  if (correct) {
+    const guesserIdx = state.thinker === 1 ? 1 : 0;
+    state.scores[guesserIdx]++;
+    updateScores();
+
+    $('win-title').textContent = `${guesserName()} got it! 🎉`;
+    $('win-questions').textContent = `In ${state.questionsUsed} question${state.questionsUsed !== 1 ? 's' : ''}`;
+    showScreen('screen-win');
+  } else {
+    const thinkerIdx = state.thinker === 1 ? 0 : 1;
+    state.scores[thinkerIdx]++;
+    updateScores();
+
+    if (state.pendingGuess) {
+      $('lose-title').textContent = `Not quite!`;
+      $('lose-sub').textContent = `${guesserName()} guessed "${state.pendingGuess}" but the answer was:`;
+    } else {
+      $('lose-title').textContent = `Out of questions!`;
+      $('lose-sub').textContent = `${guesserName()} couldn't get it! The answer was:`;
+    }
+
+    const secret = state.secretAnswer || '(the thing you were thinking of 😄)';
+    $('lose-answer').textContent = secret;
+    showScreen('screen-lose');
+  }
+}
+
+function updateScores() {
+  $('score-name1').textContent = state.p1;
+  $('score-val1').textContent = state.scores[0];
+  $('score-name2').textContent = state.p2;
+  $('score-val2').textContent = state.scores[1];
+  $('score-name1b').textContent = state.p1;
+  $('score-val1b').textContent = state.scores[0];
+  $('score-name2b').textContent = state.p2;
+  $('score-val2b').textContent = state.scores[1];
+}
+
+function playAgain(switchRoles) {
+  if (switchRoles) {
+    state.thinker = state.thinker === 1 ? 2 : 1;
+  }
+  state.category = null;
+  state.history = [];
+  state.questionsLeft = 20;
+  state.questionsUsed = 0;
+  state.hintUsed = false;
+  state.secretAnswer = '';
+  state.pendingGuess = null;
+
+  $('thinker-name').textContent = `${thinkerName()}'s turn to think`;
+  $('guesser-name-hint').textContent = guesserName();
+  $('guesser-name-pass').textContent = guesserName();
+  $('guesser-name-pass2').textContent = guesserName();
+  $('ready-btn').disabled = true;
+  $('ready-btn').textContent = `${guesserName()} is ready — Start! 🚀`;
+
+  ['Person','Place','Thing'].forEach(c => {
+    let btn = $(`cat-${c}`);
+    if (btn) { btn.classList.remove('btn-primary'); btn.classList.add('btn-ghost'); }
+  });
+
+  showScreen('screen-think');
+}
+</script>
+</body>
+</html>
